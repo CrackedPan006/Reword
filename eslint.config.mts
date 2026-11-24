@@ -23,7 +23,7 @@ export default defineConfig(
 				projectService: {
 					allowDefaultProject: ['eslint.config.mts', 'manifest.json'],
 				},
-				tsconfigRootDir: import.meta.dirname,
+				tsconfigRootDir: decodeURIComponent(new URL('.', import.meta.url).pathname).replace(/^\/([A-Za-z]:)/, '$1'),
 				extraFileExtensions: ['.json'],
 			},
 		},

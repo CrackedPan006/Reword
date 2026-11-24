@@ -1,8 +1,41 @@
-/*
+/* Reword uses your Obsidian theme's colours and fonts. */
+.view-content.reword { position: relative; display: flex; flex-direction: column; gap: var(--size-4-2); overflow: hidden; }
+.reword-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--size-4-2); }
+.reword-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--size-4-2); }
+.reword-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--size-4-2); }
+.reword-muted { color: var(--text-muted); font-size: var(--font-ui-small); }
+.reword-slider { width: 100%; }
+input.reword-wpm { width: 6em; }
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.reword-text {
+	box-sizing: border-box;
+	position: relative; flex: 1; min-height: 0; overflow: auto;
+	width: 100%; max-width: 44em; margin: 0 auto; padding: var(--size-4-4);
+	font-family: var(--font-text); line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere;
+	user-select: text;
+}
+.reword-word { cursor: pointer; border-radius: 3px; }
+.reword-word.done { color: var(--text-faint); }
+.reword-word.cur { background: var(--text-highlight-bg); }
+.reword-caret { position: absolute; width: 3px; border-radius: 2px; background: var(--interactive-accent); pointer-events: none; }
 
-If your plugin does not need CSS, delete this file.
+.reword-zen { color: var(--text-faint); }
+.reword-zen .reword-word { cursor: text; }
+.reword-zen .c.ok { color: var(--text-normal); }
+.reword-zen .c.bad, .reword-zen .ex { color: var(--text-error); }
+.reword-zen .c.bad.sp { background: var(--background-modifier-error); }
+.reword-zen .c.cur { box-shadow: inset 2px 0 0 var(--interactive-accent); }
+.reword-zen[dir="rtl"] .c.cur { box-shadow: inset -2px 0 0 var(--interactive-accent); }
+input.reword-input { width: 100%; max-width: 44em; margin: 0 auto; }
 
-*/
+.reword-pop {
+	position: absolute; z-index: 10; width: min(360px, calc(100% - 16px));
+	display: flex; flex-direction: column; gap: var(--size-4-2); padding: var(--size-4-3);
+	background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m); box-shadow: var(--shadow-s); user-select: text;
+}
+.reword-pop-body { max-height: 220px; overflow: auto; }
+.reword-context { font-style: italic; color: var(--text-muted); }
+
+input.reword-search { width: 22em; max-width: 100%; }
+.reword-results { max-height: 50vh; overflow: auto; }

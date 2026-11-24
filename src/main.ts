@@ -1,114 +1,97 @@
-import {
-	Editor,
-	MarkdownView,
-	MarkdownFileInfo,
-	Modal,
-	Notice,
-	Plugin,
-} from 'obsidian';
-import {
-	DEFAULT_SETTINGS,
-	MyPluginSettings,
-	SampleSettingTab,
-} from './settings';
+import { Notice, Plugin, TAbstractFile, TFile } from 'obsidian';
+import { canRead } from './extract';
+import { LibraryModal } from './library';
+import { DEFAULT_SETTINGS, RewordSettings, RewordSettingTab } from './settings';
+import { Mode, RewordView, VIEW_TYPE } from './view';
+import { importVocabulary } from './vocab';
 
-// Remember to rename these classes and interfaces!
+export interface Progress { read?: number; zen?: number }
+interface Data { settings: RewordSettings; progress: Record<string, Progress> }
 
-export default class MyPlugin extends Plugin {
-	settings!: MyPluginSettings;
+export default class Rplugin extends Plugin {
+	data: Data = { settings: { ...DEFAULT_SETTINGS }, progress: {} };
+	private saveTimer: number | undefined;
 
 	async onload() {
-		await this.loadSettings();
+		const saved = (await this.loadData()) as Partial<Data> | null;
+		this.data = { settings: { ...DEFAULT_SETTINGS, ...saved?.settings }, progress: saved?.progress ?? {} };
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (_evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
+		this.registerView(VIEW_TYPE, (leaf) => new RewordView(leaf, this));
+		this.addSettingTab(new RewordSettingTab(this.app, this));
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
+		// File types Obsidian cannot open by itself now open in Reword.
+		for (const ext of ['epub', 'docx', 'html', 'htm', 'xhtml', 'txt']) {
+			try { this.registerExtensions([ext], VIEW_TYPE); }
+			catch { console.warn(`Reword: .${ext} is already handled by something else`); }
+		}
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			},
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (
-				editor: Editor,
-				_ctx: MarkdownView | MarkdownFileInfo,
-			) => {
-				editor.replaceSelection('Sample editor command');
-			},
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView =
-					this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
-
-					// This command will only show up in Command Palette when the check function returns true
+		// Notes and PDFs keep their normal viewer; Reword is offered on top.
+		const modes: [Mode, string, string][] = [['read', 'Speed-read', 'book-open'], ['zen', 'Zen type', 'keyboard']];
+		for (const [mode, label, icon] of modes) {
+			this.addCommand({
+				id: mode,
+				name: `${label} current file`,
+				checkCallback: (checking) => {
+					const file = this.app.workspace.getActiveFile();
+					if (!file || !canRead(file)) return false;
+					if (!checking) void this.openFile(file, mode);
 					return true;
-				}
-				return false;
-			},
-		});
+				},
+			});
+			this.registerEvent(this.app.workspace.on('file-menu', (menu, file) => {
+				if (!(file instanceof TFile) || !canRead(file)) return;
+				menu.addItem((item) => item.setTitle(`Reword: ${label.toLowerCase()}`).setIcon(icon)
+					.onClick(() => void this.openFile(file, mode)));
+			}));
+		}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addRibbonIcon('library', 'Reword library', () => new LibraryModal(this).open());
+		this.addCommand({ id: 'library', name: 'Find a book, article or poem', callback: () => new LibraryModal(this).open() });
+		this.addCommand({ id: 'import-vocabulary', name: 'Import vocabulary from the website (JSON)', callback: () => importVocabulary(this) });
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(activeDocument, 'click', (_evt: MouseEvent) => {
-			new Notice('Click');
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(
-			window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000),
-		);
+		// keep reading positions attached to files that move
+		this.registerEvent(this.app.vault.on('rename', (file: TAbstractFile, old: string) => {
+			for (const path of Object.keys(this.data.progress)) {
+				if (path !== old && !path.startsWith(old + '/')) continue;
+				const entry = this.data.progress[path];
+				if (entry) this.data.progress[file.path + path.slice(old.length)] = entry;
+				delete this.data.progress[path];
+				this.queueSave();
+			}
+		}));
+		this.registerEvent(this.app.vault.on('delete', (file) => {
+			if (this.data.progress[file.path]) { delete this.data.progress[file.path]; this.queueSave(); }
+		}));
 	}
 
-	onunload() {}
-
-	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<MyPluginSettings>,
-		);
+	onunload() {
+		window.clearTimeout(this.saveTimer);
+		void this.persist();
 	}
 
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
-}
-
-class SampleModal extends Modal {
-	onOpen() {
-		const { contentEl } = this;
-		contentEl.setText('Woah!');
+	async openFile(file: TFile, mode: Mode) {
+		const leaf = this.app.workspace.getLeaf('tab');
+		await leaf.setViewState({ type: VIEW_TYPE, state: { file: file.path, mode }, active: true });
+		await this.app.workspace.revealLeaf(leaf);
 	}
 
-	onClose() {
-		const { contentEl } = this;
-		contentEl.empty();
+	persist() {
+		return this.saveData(this.data).catch((e: Error) => { new Notice(`Reword could not save: ${e.message}`); });
+	}
+
+	/** Save soon (progress changes on every word, so writes are batched). */
+	queueSave() {
+		if (this.saveTimer !== undefined) return;
+		this.saveTimer = window.setTimeout(() => {
+			this.saveTimer = undefined;
+			void this.persist();
+		}, 1500);
+	}
+
+	setProgress(path: string, mode: Mode, tok: number) {
+		const entry = (this.data.progress[path] ??= {});
+		if (entry[mode] === tok) return;
+		entry[mode] = tok;
+		this.queueSave();
 	}
 }
