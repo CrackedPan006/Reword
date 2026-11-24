@@ -13,6 +13,8 @@ export default defineConfig(
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
+		'tsconfig.json',
+		'src/lib/*.js',
 	]),
 	{
 		languageOptions: {
